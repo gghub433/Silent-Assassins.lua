@@ -1,346 +1,1248 @@
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local lp = Players.LocalPlayer
+--[[
+    Silent Assassins: NEXUS HUB v2.0
+    Full exploit — Combat / Movement / Visuals / Misc
+    t.me/zood3llotgk
+--]]
 
--- Clipboard
+local Players          = game:GetService("Players")
+local RunService       = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService     = game:GetService("TweenService")
+local TeleportService  = game:GetService("TeleportService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local lp               = Players.LocalPlayer
+local cam              = workspace.CurrentCamera
+
 if setclipboard then
     setclipboard("https://t.me/zood3llotgk")
-    print("Ссылка скопирована в буфер обмена!")
+    print("[NEXUS] Ссылка скопирована!")
 end
 
--- Cleanup
-local old = lp.PlayerGui:FindFirstChild("SilentHitboxHub")
-if old then old:Destroy() end
+pcall(function()
+    if lp.PlayerGui:FindFirstChild("SilentHitboxHub") then
+        lp.PlayerGui.SilentHitboxHub:Destroy()
+    end
+end)
 
--- === NAME TAG ===
-local function createNameTag(char, name)
+-- ─────────────────────────────────────────────────────────────────────────────
+--  STATES & CONFIG
+-- ─────────────────────────────────────────────────────────────────────────────
+local states = {
+    esp         = false,
+    distEsp     = false,
+    healthEsp   = false,
+    chams       = false,
+    tracers     = false,
+    crosshair   = false,
+    hitbox      = false,
+    speed       = false,
+    fly         = false,
+    noclip      = false,
+    jumpBoost   = false,
+    infStamina  = false,
+    killAura    = false,
+    autoFarm    = false,
+    godMode     = false,
+    aimlock     = false,
+    antiRagdoll = false,
+    autoCollect = false,
+    chatSpam    = false,
+}
+
+local cfg = {
+    speedValue       = 28,
+    jumpValue        = 80,
+    hitboxSize       = 15,
+    killAuraRadius   = 20,
+    autoFarmRadius   = 30,
+    aimlockRange     = 80,
+    collectRadius    = 25,
+    flySpeed         = 40,
+    chatMsg          = "NEXUS HUB | t.me/zood3llotgk",
+    chatDelay        = 3,
+}
+
+local conns   = {}
+local flyBV, flyBG
+
+-- ─────────────────────────────────────────────────────────────────────────────
+--  HELPERS
+-- ─────────────────────────────────────────────────────────────────────────────
+local function getNearestPlayer(maxDist)
+    local mc = lp.Character
+    if not mc then return nil, 9999 end
+    local mrp = mc:FindFirstChild("HumanoidRootPart")
+    if not mrp then return nil, 9999 end
+    local best, bestDist = nil, maxDist or 9999
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= lp and p.Character then
+            local th = p.Character:FindFirstChild("HumanoidRootPart")
+            local hm = p.Character:FindFirstChild("Humanoid")
+            if th and hm and hm.Health > 0 then
+                local d = (mrp.Position - th.Position).Magnitude
+                if d < bestDist then bestDist = d; best = p end
+            end
+        end
+    end
+    return best, bestDist
+end
+
+local function getPlayerIndex(target)
+    for i, p in ipairs(Players:GetPlayers()) do
+        if p == target then return i end
+    end
+    return 1
+end
+
+local function createESPTag(char, player)
     local head = char:WaitForChild("Head", 5)
-    if not head then return end
+    if not head or head:FindFirstChild("NexusTag") then return end
     local bgui = Instance.new("BillboardGui", head)
     bgui.Name = "NexusTag"
     bgui.Adornee = head
-    bgui.Size = UDim2.new(0, 100, 0, 50)
-    bgui.StudsOffset = Vector3.new(0, 3, 0)
+    bgui.Size = UDim2.new(0, 170, 0, 90)
+    bgui.StudsOffset = Vector3.new(0, 2.8, 0)
     bgui.AlwaysOnTop = true
-    local label = Instance.new("TextLabel", bgui)
-    label.BackgroundTransparency = 1
-    label.Size = UDim2.new(1, 0, 1, 0)
-    label.Text = name
-    label.Font = Enum.Font.GothamBold
-    label.TextSize = 14
-    label.TextColor3 = Color3.new(1, 1, 1)
-    label.TextStrokeTransparency = 0.5
-    return bgui
+
+    local nameL = Instance.new("TextLabel", bgui)
+    nameL.Name = "NameLabel"
+    nameL.BackgroundTransparency = 1
+    nameL.Size = UDim2.new(1, 0, 0, 22)
+    nameL.Position = UDim2.new(0, 0, 0, 0)
+    nameL.Text = player.DisplayName or player.Name
+    nameL.Font = Enum.Font.GothamBold
+    nameL.TextSize = 14
+    nameL.TextColor3 = Color3.new(1, 1, 1)
+    nameL.TextStrokeTransparency = 0.35
+
+    local distL = Instance.new("TextLabel", bgui)
+    distL.Name = "DistLabel"
+    distL.BackgroundTransparency = 1
+    distL.Size = UDim2.new(1, 0, 0, 16)
+    distL.Position = UDim2.new(0, 0, 0, 24)
+    distL.Font = Enum.Font.Gotham
+    distL.TextSize = 11
+    distL.TextColor3 = Color3.fromRGB(190, 190, 200)
+    distL.TextStrokeTransparency = 0.5
+    distL.Visible = false
+
+    local hpBg = Instance.new("Frame", bgui)
+    hpBg.Name = "HpBg"
+    hpBg.Size = UDim2.new(0.82, 0, 0, 6)
+    hpBg.Position = UDim2.new(0.09, 0, 0, 44)
+    hpBg.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    hpBg.BorderSizePixel = 0
+    hpBg.Visible = false
+    Instance.new("UICorner", hpBg).CornerRadius = UDim.new(1, 0)
+
+    local hpFill = Instance.new("Frame", hpBg)
+    hpFill.Name = "HpFill"
+    hpFill.Size = UDim2.new(1, 0, 1, 0)
+    hpFill.BackgroundColor3 = Color3.fromRGB(50, 200, 80)
+    hpFill.BorderSizePixel = 0
+    Instance.new("UICorner", hpFill).CornerRadius = UDim.new(1, 0)
 end
 
--- === UI ===
+local function refreshESPTag(char, player)
+    local head = char:FindFirstChild("Head")
+    if not head then return end
+    local tag = head:FindFirstChild("NexusTag")
+    if not tag then return end
+
+    -- distance
+    local distL = tag:FindFirstChild("DistLabel")
+    local mc = lp.Character
+    if mc and mc:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("HumanoidRootPart") then
+        local d = math.floor((mc.HumanoidRootPart.Position - char.HumanoidRootPart.Position).Magnitude)
+        if distL then
+            distL.Text = d .. " studs"
+            distL.Visible = states.distEsp
+        end
+    end
+
+    -- health bar
+    local hpBg = tag:FindFirstChild("HpBg")
+    if hpBg then
+        hpBg.Visible = states.healthEsp
+        if states.healthEsp then
+            local hum = char:FindFirstChild("Humanoid")
+            if hum then
+                local ratio = math.clamp(hum.Health / math.max(hum.MaxHealth, 1), 0, 1)
+                local hpFill = hpBg:FindFirstChild("HpFill")
+                if hpFill then
+                    hpFill.Size = UDim2.new(ratio, 0, 1, 0)
+                    hpFill.BackgroundColor3 = Color3.fromRGB(
+                        math.floor((1 - ratio) * 255),
+                        math.floor(ratio * 200),
+                        50
+                    )
+                end
+            end
+        end
+    end
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+--  MAIN FRAME
+-- ─────────────────────────────────────────────────────────────────────────────
 local ScreenGui = Instance.new("ScreenGui", lp.PlayerGui)
 ScreenGui.Name = "SilentHitboxHub"
 ScreenGui.ResetOnSpawn = false
+ScreenGui.DisplayOrder = 999
 
 local Main = Instance.new("Frame", ScreenGui)
-Main.Size = UDim2.new(0, 220, 0, 520)
-Main.Position = UDim2.new(1, -240, 0.05, 0)
-Main.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+Main.Name = "Main"
+Main.Size = UDim2.new(0, 400, 0, 500)
+Main.Position = UDim2.new(0.5, -200, 0.06, 0)
+Main.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
 Main.Active = true
 Main.Draggable = true
-Instance.new("UICorner", Main)
+Main.ClipsDescendants = true
+Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 10)
 
-local Title = Instance.new("TextLabel", Main)
-Title.Size = UDim2.new(1, 0, 0, 40)
-Title.Position = UDim2.new(0, 0, 0, 0)
-Title.Text = "Silent Assassins: BY NEXUS"
-Title.TextColor3 = Color3.new(1, 1, 1)
-Title.Font = Enum.Font.GothamBold
-Title.TextSize = 13
-Title.BackgroundTransparency = 1
+-- ── Header ───────────────────────────────────────────────────────────────────
+local Header = Instance.new("Frame", Main)
+Header.Size = UDim2.new(1, 0, 0, 40)
+Header.BackgroundColor3 = Color3.fromRGB(12, 12, 16)
+Header.BorderSizePixel = 0
+Instance.new("UICorner", Header).CornerRadius = UDim.new(0, 10)
 
--- === STATES ===
-local states = {esp=false, speed=false, hitbox=false, killAura=false, autoFarm=false, godMode=false}
-local hitboxSize = 15
-local killAuraRadius = 20
-local autoFarmRadius = 30
+local hFix = Instance.new("Frame", Header)
+hFix.Size  = UDim2.new(1, 0, 0.5, 0)
+hFix.Position = UDim2.new(0, 0, 0.5, 0)
+hFix.BackgroundColor3 = Header.BackgroundColor3
+hFix.BorderSizePixel = 0
 
--- Button refs for radius label updates
-local killAuraBtn, autoFarmBtn
+local TitleL = Instance.new("TextLabel", Header)
+TitleL.Size = UDim2.new(1, -76, 1, 0)
+TitleL.Position = UDim2.new(0, 12, 0, 0)
+TitleL.BackgroundTransparency = 1
+TitleL.Text = "⚡ SILENT ASSASSINS — NEXUS HUB"
+TitleL.TextColor3 = Color3.fromRGB(0, 180, 255)
+TitleL.Font = Enum.Font.GothamBold
+TitleL.TextSize = 12
+TitleL.TextXAlignment = Enum.TextXAlignment.Left
 
--- Button factory
-local function makeBtn(txt, yPos, key, callback)
-    local b = Instance.new("TextButton", Main)
-    b.Size = UDim2.new(0, 196, 0, 36)
-    b.Position = UDim2.new(0, 12, 0, yPos)
-    b.Text = txt .. ": OFF"
-    b.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
+local minimized = false
+
+local MinBtn = Instance.new("TextButton", Header)
+MinBtn.Size = UDim2.new(0, 27, 0, 22)
+MinBtn.Position = UDim2.new(1, -60, 0.5, -11)
+MinBtn.Text = "—"
+MinBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 68)
+MinBtn.TextColor3 = Color3.new(1, 1, 1)
+MinBtn.Font = Enum.Font.GothamBold
+MinBtn.TextSize = 14
+Instance.new("UICorner", MinBtn).CornerRadius = UDim.new(0, 5)
+
+MinBtn.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    Main.Size = minimized
+        and UDim2.new(0, 400, 0, 40)
+        or  UDim2.new(0, 400, 0, 500)
+    MinBtn.Text = minimized and "□" or "—"
+end)
+
+local CloseBtn = Instance.new("TextButton", Header)
+CloseBtn.Size = UDim2.new(0, 27, 0, 22)
+CloseBtn.Position = UDim2.new(1, -30, 0.5, -11)
+CloseBtn.Text = "✕"
+CloseBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+CloseBtn.TextColor3 = Color3.new(1, 1, 1)
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.TextSize = 13
+Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 5)
+
+CloseBtn.MouseButton1Click:Connect(function()
+    for _, c in pairs(conns) do pcall(function() c:Disconnect() end) end
+    if flyBV then pcall(function() flyBV:Destroy() end) end
+    if flyBG then pcall(function() flyBG:Destroy() end) end
+    ScreenGui:Destroy()
+end)
+
+-- ── Tab bar ───────────────────────────────────────────────────────────────────
+local TabBar = Instance.new("Frame", Main)
+TabBar.Size = UDim2.new(1, 0, 0, 32)
+TabBar.Position = UDim2.new(0, 0, 0, 40)
+TabBar.BackgroundColor3 = Color3.fromRGB(14, 14, 18)
+TabBar.BorderSizePixel = 0
+
+local tabNames  = {"COMBAT", "MOVE", "VISUAL", "MISC"}
+local tabFrames = {}
+local tabBtns   = {}
+
+local function switchTab(name)
+    for _, n in pairs(tabNames) do
+        if tabBtns[n] then
+            tabBtns[n].BackgroundColor3 = (n == name)
+                and Color3.fromRGB(0, 100, 220)
+                or  Color3.fromRGB(25, 25, 32)
+        end
+        if tabFrames[n] then tabFrames[n].Visible = (n == name) end
+    end
+end
+
+for i, name in ipairs(tabNames) do
+    local b = Instance.new("TextButton", TabBar)
+    b.Size = UDim2.new(0.25, 0, 1, 0)
+    b.Position = UDim2.new(0.25 * (i - 1), 0, 0, 0)
+    b.Text = name
+    b.BackgroundColor3 = Color3.fromRGB(25, 25, 32)
+    b.TextColor3 = Color3.new(1, 1, 1)
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 11
+    b.BorderSizePixel = 0
+    tabBtns[name] = b
+    b.MouseButton1Click:Connect(function() switchTab(name) end)
+end
+
+-- ── Scrollable content per tab ───────────────────────────────────────────────
+local function makeTabFrame(name)
+    local sf = Instance.new("ScrollingFrame", Main)
+    sf.Name = name .. "Tab"
+    sf.Size = UDim2.new(1, 0, 0, 400)
+    sf.Position = UDim2.new(0, 0, 0, 72)
+    sf.BackgroundTransparency = 1
+    sf.ScrollBarThickness = 4
+    sf.ScrollBarImageColor3 = Color3.fromRGB(0, 120, 255)
+    sf.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    sf.CanvasSize = UDim2.new(0, 0, 0, 0)
+    sf.Visible = false
+
+    local layout = Instance.new("UIListLayout", sf)
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.Padding = UDim.new(0, 5)
+
+    local pad = Instance.new("UIPadding", sf)
+    pad.PaddingLeft  = UDim.new(0, 10)
+    pad.PaddingRight = UDim.new(0, 10)
+    pad.PaddingTop   = UDim.new(0, 8)
+
+    tabFrames[name] = sf
+    return sf
+end
+
+local combatTab = makeTabFrame("COMBAT")
+local moveTab   = makeTabFrame("MOVE")
+local visualTab = makeTabFrame("VISUAL")
+local miscTab   = makeTabFrame("MISC")
+
+-- ── Link bar ──────────────────────────────────────────────────────────────────
+local LinkBar = Instance.new("Frame", Main)
+LinkBar.Size = UDim2.new(1, 0, 0, 28)
+LinkBar.Position = UDim2.new(0, 0, 1, -28)
+LinkBar.BackgroundColor3 = Color3.fromRGB(12, 12, 16)
+LinkBar.BorderSizePixel = 0
+
+local LinkBox = Instance.new("TextBox", LinkBar)
+LinkBox.Size = UDim2.new(1, -20, 1, 0)
+LinkBox.Position = UDim2.new(0, 10, 0, 0)
+LinkBox.BackgroundTransparency = 1
+LinkBox.Text = "t.me/zood3llotgk"
+LinkBox.TextColor3 = Color3.fromRGB(0, 180, 255)
+LinkBox.Font = Enum.Font.Gotham
+LinkBox.TextSize = 12
+LinkBox.ClearTextOnFocus = false
+LinkBox.TextEditable = false
+
+-- ─────────────────────────────────────────────────────────────────────────────
+--  UI ELEMENT BUILDERS
+-- ─────────────────────────────────────────────────────────────────────────────
+local _order = 1
+local function nextOrder()
+    _order = _order + 1
+    return _order
+end
+
+local function makeSection(parent, label)
+    local f = Instance.new("Frame", parent)
+    f.Size = UDim2.new(1, 0, 0, 24)
+    f.BackgroundTransparency = 1
+    f.LayoutOrder = nextOrder()
+
+    local line = Instance.new("Frame", f)
+    line.Size = UDim2.new(1, 0, 0, 1)
+    line.Position = UDim2.new(0, 0, 0.5, 0)
+    line.BackgroundColor3 = Color3.fromRGB(38, 38, 46)
+    line.BorderSizePixel = 0
+
+    local lbl = Instance.new("TextLabel", f)
+    lbl.AutomaticSize = Enum.AutomaticSize.X
+    lbl.Size = UDim2.new(0, 0, 1, 0)
+    lbl.Position = UDim2.new(0, 6, 0, 0)
+    lbl.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
+    lbl.Text = "  " .. label .. "  "
+    lbl.TextColor3 = Color3.fromRGB(0, 170, 255)
+    lbl.Font = Enum.Font.GothamBold
+    lbl.TextSize = 11
+    return f
+end
+
+local function makeToggle(parent, label, key, onToggle)
+    local b = Instance.new("TextButton", parent)
+    b.Size = UDim2.new(1, 0, 0, 34)
+    b.BackgroundColor3 = Color3.fromRGB(28, 28, 36)
     b.TextColor3 = Color3.new(1, 1, 1)
     b.Font = Enum.Font.GothamBold
     b.TextSize = 13
-    Instance.new("UICorner", b)
+    b.Text = "  " .. label .. ":  OFF"
+    b.TextXAlignment = Enum.TextXAlignment.Left
+    b.LayoutOrder = nextOrder()
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
+
+    local dot = Instance.new("Frame", b)
+    dot.Size = UDim2.new(0, 8, 0, 8)
+    dot.Position = UDim2.new(1, -18, 0.5, -4)
+    dot.BackgroundColor3 = Color3.fromRGB(75, 75, 75)
+    dot.BorderSizePixel = 0
+    Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
+
     b.MouseButton1Click:Connect(function()
         states[key] = not states[key]
-        b.BackgroundColor3 = states[key] and Color3.fromRGB(0, 120, 255) or Color3.fromRGB(45, 45, 50)
-        b.Text = txt .. (states[key] and ": ON" or ": OFF")
-        if callback then callback(states[key]) end
+        if states[key] then
+            b.BackgroundColor3 = Color3.fromRGB(0, 88, 185)
+            b.Text = "  " .. label .. ":  ON"
+            dot.BackgroundColor3 = Color3.fromRGB(50, 220, 100)
+        else
+            b.BackgroundColor3 = Color3.fromRGB(28, 28, 36)
+            b.Text = "  " .. label .. ":  OFF"
+            dot.BackgroundColor3 = Color3.fromRGB(75, 75, 75)
+        end
+        if onToggle then onToggle(states[key], b) end
     end)
     return b
 end
 
-makeBtn("ESP + NICKS", 45, "esp")
-makeBtn("SPEED HACK",  86, "speed")
-makeBtn("BIG HITBOX", 127, "hitbox")
-
--- === KILL AURA ===
-killAuraBtn = makeBtn("KILL AURA [20m]", 168, "killAura", function(on)
-    if on then
-        task.spawn(function()
-            while states.killAura do
-                local myChar = lp.Character
-                if myChar then
-                    local myHrp = myChar:FindFirstChild("HumanoidRootPart")
-                    local myHum = myChar:FindFirstChild("Humanoid")
-                    if myHrp and myHum and myHum.Health > 0 then
-                        local tool = myChar:FindFirstChildOfClass("Tool")
-                        for _, p in pairs(Players:GetPlayers()) do
-                            if p ~= lp and p.Character then
-                                local tHrp = p.Character:FindFirstChild("HumanoidRootPart")
-                                local tHum = p.Character:FindFirstChild("Humanoid")
-                                if tHrp and tHum and tHum.Health > 0 then
-                                    if (myHrp.Position - tHrp.Position).Magnitude <= killAuraRadius then
-                                        local origCF = myHrp.CFrame
-                                        myHrp.CFrame = tHrp.CFrame * CFrame.new(0, 0, -2)
-                                        if tool then pcall(function() tool:Activate() end) end
-                                        task.wait(0.1)
-                                        myHrp.CFrame = origCF
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
-                task.wait(0.15)
-            end
-        end)
-    end
-end)
-
--- === AUTO FARM ===
-autoFarmBtn = makeBtn("AUTO FARM [30m]", 209, "autoFarm", function(on)
-    if on then
-        task.spawn(function()
-            while states.autoFarm do
-                local myChar = lp.Character
-                if myChar then
-                    local myHrp = myChar:FindFirstChild("HumanoidRootPart")
-                    if myHrp then
-                        local tool = myChar:FindFirstChildOfClass("Tool")
-                        local playerChars = {}
-                        for _, p in pairs(Players:GetPlayers()) do
-                            if p.Character then playerChars[p.Character] = true end
-                        end
-                        for _, obj in pairs(workspace:GetDescendants()) do
-                            if obj:IsA("Humanoid") and obj.Health > 0 and not playerChars[obj.Parent] then
-                                local npcHrp = obj.Parent:FindFirstChild("HumanoidRootPart")
-                                if npcHrp then
-                                    if (myHrp.Position - npcHrp.Position).Magnitude <= autoFarmRadius then
-                                        local origCF = myHrp.CFrame
-                                        myHrp.CFrame = npcHrp.CFrame * CFrame.new(0, 0, -2)
-                                        if tool then pcall(function() tool:Activate() end) end
-                                        task.wait(0.1)
-                                        myHrp.CFrame = origCF
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
-                task.wait(0.2)
-            end
-        end)
-    end
-end)
-
--- === GOD MODE ===
-makeBtn("GOD MODE", 250, "godMode", function(on)
-    if on then
-        task.spawn(function()
-            while states.godMode do
-                local myChar = lp.Character
-                if myChar then
-                    local hum = myChar:FindFirstChild("Humanoid")
-                    if hum then
-                        hum.MaxHealth = math.huge
-                        hum.Health = math.huge
-                    end
-                end
-                task.wait(0.05)
-            end
-        end)
-    end
-end)
-
--- === GET SWORDS (one-shot) ===
-local getSwordsBtn = Instance.new("TextButton", Main)
-getSwordsBtn.Size = UDim2.new(0, 196, 0, 36)
-getSwordsBtn.Position = UDim2.new(0, 12, 0, 291)
-getSwordsBtn.Text = "GET SWORDS"
-getSwordsBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
-getSwordsBtn.TextColor3 = Color3.new(1, 1, 1)
-getSwordsBtn.Font = Enum.Font.GothamBold
-getSwordsBtn.TextSize = 13
-Instance.new("UICorner", getSwordsBtn)
-getSwordsBtn.MouseButton1Click:Connect(function()
-    getSwordsBtn.Text = "GETTING..."
-    getSwordsBtn.BackgroundColor3 = Color3.fromRGB(180, 130, 0)
-    -- Tools lying in workspace
-    for _, obj in pairs(workspace:GetDescendants()) do
-        pcall(function()
-            if obj:IsA("Tool") then
-                obj.Parent = lp.Backpack
-            end
-        end)
-    end
-    -- StarterPack clones
-    pcall(function()
-        for _, obj in pairs(game:GetService("StarterPack"):GetChildren()) do
-            if obj:IsA("Tool") then
-                local clone = obj:Clone()
-                clone.Parent = lp.Backpack
-            end
-        end
+local function makeAction(parent, label, callback)
+    local b = Instance.new("TextButton", parent)
+    b.Size = UDim2.new(1, 0, 0, 34)
+    b.BackgroundColor3 = Color3.fromRGB(0, 78, 155)
+    b.TextColor3 = Color3.new(1, 1, 1)
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 13
+    b.Text = label
+    b.LayoutOrder = nextOrder()
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
+    b.MouseButton1Click:Connect(function()
+        if callback then callback(b) end
     end)
-    -- ReplicatedStorage clones
-    pcall(function()
-        for _, obj in pairs(game:GetService("ReplicatedStorage"):GetDescendants()) do
-            if obj:IsA("Tool") then
-                local clone = obj:Clone()
-                clone.Parent = lp.Backpack
-            end
-        end
-    end)
-    task.wait(0.4)
-    getSwordsBtn.Text = "GET SWORDS ✓"
-    getSwordsBtn.BackgroundColor3 = Color3.fromRGB(0, 140, 70)
-    task.wait(2)
-    getSwordsBtn.Text = "GET SWORDS"
-    getSwordsBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
-end)
+    return b
+end
 
--- === RADIUS CONTROLS ===
-local function makeRadiusRow(labelText, yLabel, yBtns, getVal, setVal, updateBtnFn)
-    local lbl = Instance.new("TextLabel", Main)
-    lbl.Size = UDim2.new(0, 196, 0, 20)
-    lbl.Position = UDim2.new(0, 12, 0, yLabel)
+local function makeSlider(parent, label, minV, maxV, defVal, onChange)
+    local c = Instance.new("Frame", parent)
+    c.Size = UDim2.new(1, 0, 0, 54)
+    c.BackgroundColor3 = Color3.fromRGB(26, 26, 33)
+    c.LayoutOrder = nextOrder()
+    Instance.new("UICorner", c).CornerRadius = UDim.new(0, 6)
+
+    local lbl = Instance.new("TextLabel", c)
+    lbl.Size = UDim2.new(1, -10, 0, 20)
+    lbl.Position = UDim2.new(0, 10, 0, 6)
     lbl.BackgroundTransparency = 1
-    lbl.Text = labelText .. getVal() .. "m"
-    lbl.TextColor3 = Color3.fromRGB(170, 170, 175)
+    lbl.Text = label .. ": " .. defVal
+    lbl.TextColor3 = Color3.fromRGB(190, 190, 200)
     lbl.Font = Enum.Font.Gotham
     lbl.TextSize = 12
     lbl.TextXAlignment = Enum.TextXAlignment.Left
 
-    local decBtn = Instance.new("TextButton", Main)
-    decBtn.Size = UDim2.new(0, 38, 0, 24)
-    decBtn.Position = UDim2.new(0, 12, 0, yBtns)
-    decBtn.Text = "−"
-    decBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 68)
-    decBtn.TextColor3 = Color3.new(1, 1, 1)
-    decBtn.Font = Enum.Font.GothamBold
-    decBtn.TextSize = 16
-    Instance.new("UICorner", decBtn)
+    local track = Instance.new("Frame", c)
+    track.Size = UDim2.new(1, -20, 0, 6)
+    track.Position = UDim2.new(0, 10, 0, 36)
+    track.BackgroundColor3 = Color3.fromRGB(44, 44, 52)
+    track.BorderSizePixel = 0
+    Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
 
-    local incBtn = Instance.new("TextButton", Main)
-    incBtn.Size = UDim2.new(0, 38, 0, 24)
-    incBtn.Position = UDim2.new(0, 54, 0, yBtns)
-    incBtn.Text = "+"
-    incBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 68)
-    incBtn.TextColor3 = Color3.new(1, 1, 1)
-    incBtn.Font = Enum.Font.GothamBold
-    incBtn.TextSize = 16
-    Instance.new("UICorner", incBtn)
+    local ratio0 = math.clamp((defVal - minV) / (maxV - minV), 0, 1)
 
-    decBtn.MouseButton1Click:Connect(function()
-        setVal(math.max(5, getVal() - 5))
-        lbl.Text = labelText .. getVal() .. "m"
-        updateBtnFn(getVal())
+    local fill = Instance.new("Frame", track)
+    fill.Size = UDim2.new(ratio0, 0, 1, 0)
+    fill.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
+    fill.BorderSizePixel = 0
+    Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
+
+    local knob = Instance.new("Frame", track)
+    knob.Size = UDim2.new(0, 13, 0, 13)
+    knob.Position = UDim2.new(ratio0, -6, 0.5, -6)
+    knob.BackgroundColor3 = Color3.new(1, 1, 1)
+    knob.BorderSizePixel = 0
+    Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
+
+    local dragging = false
+
+    local function applyRatio(r)
+        r = math.clamp(r, 0, 1)
+        fill.Size  = UDim2.new(r, 0, 1, 0)
+        knob.Position = UDim2.new(r, -6, 0.5, -6)
+        local v = math.floor(minV + r * (maxV - minV))
+        lbl.Text = label .. ": " .. v
+        if onChange then onChange(v) end
+    end
+
+    knob.InputBegan:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1 then dragging = true end
     end)
-    incBtn.MouseButton1Click:Connect(function()
-        setVal(math.min(200, getVal() + 5))
-        lbl.Text = labelText .. getVal() .. "m"
-        updateBtnFn(getVal())
+    track.InputBegan:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            applyRatio((inp.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X)
+        end
     end)
+    UserInputService.InputEnded:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+    end)
+    UserInputService.InputChanged:Connect(function(inp)
+        if dragging and inp.UserInputType == Enum.UserInputType.MouseMovement then
+            applyRatio((inp.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X)
+        end
+    end)
+    return c
 end
 
-makeRadiusRow(
-    "Kill Aura Radius: ", 336, 358,
-    function() return killAuraRadius end,
-    function(v) killAuraRadius = v end,
-    function(v)
-        killAuraBtn.Text = "KILL AURA [" .. v .. "m]" .. (states.killAura and ": ON" or ": OFF")
+local function makeRadiusRow(parent, label, cfgKey, minV, maxV)
+    local c = Instance.new("Frame", parent)
+    c.Size = UDim2.new(1, 0, 0, 36)
+    c.BackgroundColor3 = Color3.fromRGB(22, 22, 30)
+    c.LayoutOrder = nextOrder()
+    Instance.new("UICorner", c).CornerRadius = UDim.new(0, 6)
+
+    local lbl = Instance.new("TextLabel", c)
+    lbl.Size = UDim2.new(1, -90, 1, 0)
+    lbl.Position = UDim2.new(0, 10, 0, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = label .. ": " .. cfg[cfgKey] .. "m"
+    lbl.TextColor3 = Color3.fromRGB(160, 160, 170)
+    lbl.Font = Enum.Font.Gotham
+    lbl.TextSize = 12
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+
+    local dec = Instance.new("TextButton", c)
+    dec.Size = UDim2.new(0, 32, 0, 24)
+    dec.Position = UDim2.new(1, -74, 0.5, -12)
+    dec.Text = "−"
+    dec.BackgroundColor3 = Color3.fromRGB(48, 48, 58)
+    dec.TextColor3 = Color3.new(1, 1, 1)
+    dec.Font = Enum.Font.GothamBold
+    dec.TextSize = 16
+    Instance.new("UICorner", dec).CornerRadius = UDim.new(0, 5)
+
+    local inc = Instance.new("TextButton", c)
+    inc.Size = UDim2.new(0, 32, 0, 24)
+    inc.Position = UDim2.new(1, -38, 0.5, -12)
+    inc.Text = "+"
+    inc.BackgroundColor3 = Color3.fromRGB(48, 48, 58)
+    inc.TextColor3 = Color3.new(1, 1, 1)
+    inc.Font = Enum.Font.GothamBold
+    inc.TextSize = 16
+    Instance.new("UICorner", inc).CornerRadius = UDim.new(0, 5)
+
+    dec.MouseButton1Click:Connect(function()
+        cfg[cfgKey] = math.max(minV, cfg[cfgKey] - 5)
+        lbl.Text = label .. ": " .. cfg[cfgKey] .. "m"
+    end)
+    inc.MouseButton1Click:Connect(function()
+        cfg[cfgKey] = math.min(maxV, cfg[cfgKey] + 5)
+        lbl.Text = label .. ": " .. cfg[cfgKey] .. "m"
+    end)
+    return c
+end
+
+local function makeTextInput(parent, placeholder, default)
+    local c = Instance.new("Frame", parent)
+    c.Size = UDim2.new(1, 0, 0, 38)
+    c.BackgroundColor3 = Color3.fromRGB(24, 24, 32)
+    c.LayoutOrder = nextOrder()
+    Instance.new("UICorner", c).CornerRadius = UDim.new(0, 6)
+
+    local box = Instance.new("TextBox", c)
+    box.Size = UDim2.new(1, -20, 0, 26)
+    box.Position = UDim2.new(0, 10, 0.5, -13)
+    box.BackgroundColor3 = Color3.fromRGB(34, 34, 44)
+    box.TextColor3 = Color3.new(1, 1, 1)
+    box.PlaceholderText = placeholder
+    box.PlaceholderColor3 = Color3.fromRGB(90, 90, 100)
+    box.Font = Enum.Font.Gotham
+    box.TextSize = 12
+    box.Text = default or ""
+    box.ClearTextOnFocus = false
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0, 5)
+    return c, box
+end
+
+local function makeSpacer(parent)
+    local f = Instance.new("Frame", parent)
+    f.Size = UDim2.new(1, 0, 0, 4)
+    f.BackgroundTransparency = 1
+    f.LayoutOrder = nextOrder()
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+--  COMBAT TAB
+-- ─────────────────────────────────────────────────────────────────────────────
+makeSection(combatTab, "KILL AURA")
+
+makeToggle(combatTab, "KILL AURA", "killAura", function(on)
+    if not on then return end
+    task.spawn(function()
+        while states.killAura do
+            local mc = lp.Character
+            if mc then
+                local mrp = mc:FindFirstChild("HumanoidRootPart")
+                local mhm = mc:FindFirstChild("Humanoid")
+                if mrp and mhm and mhm.Health > 0 then
+                    local tool = mc:FindFirstChildOfClass("Tool")
+                    for _, p in pairs(Players:GetPlayers()) do
+                        if p ~= lp and p.Character then
+                            local trp = p.Character:FindFirstChild("HumanoidRootPart")
+                            local thm = p.Character:FindFirstChild("Humanoid")
+                            if trp and thm and thm.Health > 0 then
+                                if (mrp.Position - trp.Position).Magnitude <= cfg.killAuraRadius then
+                                    local orig = mrp.CFrame
+                                    mrp.CFrame = trp.CFrame * CFrame.new(0, 0, -1.8)
+                                    if tool then pcall(function() tool:Activate() end) end
+                                    task.wait(0.08)
+                                    mrp.CFrame = orig
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            task.wait(0.12)
+        end
+    end)
+end)
+
+makeRadiusRow(combatTab, "Kill Aura Radius", "killAuraRadius", 5, 150)
+
+makeSection(combatTab, "AUTO FARM")
+
+makeToggle(combatTab, "AUTO FARM (NPCs)", "autoFarm", function(on)
+    if not on then return end
+    task.spawn(function()
+        while states.autoFarm do
+            local mc = lp.Character
+            if mc then
+                local mrp = mc:FindFirstChild("HumanoidRootPart")
+                if mrp then
+                    local tool = mc:FindFirstChildOfClass("Tool")
+                    local pcs = {}
+                    for _, p in pairs(Players:GetPlayers()) do
+                        if p.Character then pcs[p.Character] = true end
+                    end
+                    for _, obj in pairs(workspace:GetDescendants()) do
+                        if obj:IsA("Humanoid") and obj.Health > 0 and not pcs[obj.Parent] then
+                            local nrp = obj.Parent:FindFirstChild("HumanoidRootPart")
+                            if nrp and (mrp.Position - nrp.Position).Magnitude <= cfg.autoFarmRadius then
+                                local orig = mrp.CFrame
+                                mrp.CFrame = nrp.CFrame * CFrame.new(0, 0, -1.8)
+                                if tool then pcall(function() tool:Activate() end) end
+                                task.wait(0.08)
+                                mrp.CFrame = orig
+                            end
+                        end
+                    end
+                end
+            end
+            task.wait(0.18)
+        end
+    end)
+end)
+
+makeRadiusRow(combatTab, "Farm Radius", "autoFarmRadius", 5, 200)
+
+makeSection(combatTab, "TARGETING")
+
+makeToggle(combatTab, "AIMLOCK (nearest head)", "aimlock", function(on)
+    if not on then return end
+    task.spawn(function()
+        while states.aimlock do
+            local nearest = getNearestPlayer(cfg.aimlockRange)
+            if nearest and nearest.Character then
+                local head = nearest.Character:FindFirstChild("Head")
+                if head then
+                    cam.CFrame = CFrame.lookAt(cam.CFrame.Position, head.Position)
+                end
+            end
+            task.wait(0.03)
+        end
+    end)
+end)
+
+makeRadiusRow(combatTab, "Aimlock Range", "aimlockRange", 10, 300)
+
+makeToggle(combatTab, "ANTI-RAGDOLL", "antiRagdoll")
+
+makeSection(combatTab, "ACTIONS")
+
+makeAction(combatTab, "▶  INSTANT KILL — Nearest", function()
+    task.spawn(function()
+        local mc = lp.Character
+        if not mc then return end
+        local mrp = mc:FindFirstChild("HumanoidRootPart")
+        if not mrp then return end
+        local tool = mc:FindFirstChildOfClass("Tool")
+        local nearest = getNearestPlayer(9999)
+        if not nearest or not nearest.Character then return end
+        local trp = nearest.Character:FindFirstChild("HumanoidRootPart")
+        if not trp then return end
+        local orig = mrp.CFrame
+        mrp.CFrame = trp.CFrame * CFrame.new(0, 0, -1.5)
+        for _ = 1, 12 do
+            if tool then pcall(function() tool:Activate() end) end
+            task.wait(0.03)
+        end
+        mrp.CFrame = orig
+    end)
+end)
+
+makeAction(combatTab, "💀  MURDER ALL — Server", function(btn)
+    btn.Text = "💀  Executing..."
+    btn.BackgroundColor3 = Color3.fromRGB(170, 25, 25)
+    task.spawn(function()
+        local mc = lp.Character
+        if mc then
+            local mrp = mc:FindFirstChild("HumanoidRootPart")
+            local tool = mrp and mc:FindFirstChildOfClass("Tool")
+            for _, p in pairs(Players:GetPlayers()) do
+                if p ~= lp and p.Character then
+                    local trp = p.Character:FindFirstChild("HumanoidRootPart")
+                    local thm = p.Character:FindFirstChild("Humanoid")
+                    if trp and thm and thm.Health > 0 and mrp then
+                        local orig = mrp.CFrame
+                        mrp.CFrame = trp.CFrame * CFrame.new(0, 0, -1.5)
+                        for _ = 1, 7 do
+                            if tool then pcall(function() tool:Activate() end) end
+                            task.wait(0.04)
+                        end
+                        mrp.CFrame = orig
+                        task.wait(0.06)
+                    end
+                end
+            end
+        end
+        btn.Text = "💀  MURDER ALL — Server"
+        btn.BackgroundColor3 = Color3.fromRGB(0, 78, 155)
+    end)
+end)
+
+makeAction(combatTab, "⚡  KILL ALL NPCs — Workspace", function(btn)
+    btn.BackgroundColor3 = Color3.fromRGB(120, 80, 0)
+    task.spawn(function()
+        local mc = lp.Character
+        if not mc then return end
+        local mrp = mc:FindFirstChild("HumanoidRootPart")
+        if not mrp then return end
+        local tool = mc:FindFirstChildOfClass("Tool")
+        local pcs = {}
+        for _, p in pairs(Players:GetPlayers()) do
+            if p.Character then pcs[p.Character] = true end
+        end
+        for _, obj in pairs(workspace:GetDescendants()) do
+            if obj:IsA("Humanoid") and obj.Health > 0 and not pcs[obj.Parent] then
+                local nrp = obj.Parent:FindFirstChild("HumanoidRootPart")
+                if nrp then
+                    local orig = mrp.CFrame
+                    mrp.CFrame = nrp.CFrame * CFrame.new(0, 0, -1.5)
+                    for _ = 1, 5 do
+                        if tool then pcall(function() tool:Activate() end) end
+                        task.wait(0.04)
+                    end
+                    mrp.CFrame = orig
+                    task.wait(0.05)
+                end
+            end
+        end
+        btn.BackgroundColor3 = Color3.fromRGB(0, 78, 155)
+    end)
+end)
+
+makeSpacer(combatTab)
+
+-- ─────────────────────────────────────────────────────────────────────────────
+--  MOVE TAB
+-- ─────────────────────────────────────────────────────────────────────────────
+makeSection(moveTab, "SPEED")
+
+makeToggle(moveTab, "SPEED HACK", "speed")
+makeSlider(moveTab, "Walk Speed", 16, 150, cfg.speedValue, function(v)
+    cfg.speedValue = v
+end)
+
+makeSection(moveTab, "FLY  [WASD + Space / Shift]")
+
+makeToggle(moveTab, "FLY HACK", "fly", function(on)
+    if on then
+        local mc = lp.Character
+        if not mc then return end
+        local hrp = mc:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        local hum = mc:FindFirstChild("Humanoid")
+        if hum then hum.PlatformStand = true end
+
+        pcall(function()
+            if hrp:FindFirstChild("NexusFlyBV") then hrp.NexusFlyBV:Destroy() end
+            if hrp:FindFirstChild("NexusFlyBG") then hrp.NexusFlyBG:Destroy() end
+        end)
+
+        flyBV = Instance.new("BodyVelocity", hrp)
+        flyBV.Name = "NexusFlyBV"
+        flyBV.MaxForce = Vector3.new(1e5, 1e5, 1e5)
+        flyBV.Velocity  = Vector3.zero
+
+        flyBG = Instance.new("BodyGyro", hrp)
+        flyBG.Name = "NexusFlyBG"
+        flyBG.MaxTorque = Vector3.new(1e5, 1e5, 1e5)
+        flyBG.D = 100
+        flyBG.P = 10000
+
+        local flyConn
+        flyConn = RunService.RenderStepped:Connect(function()
+            if not states.fly then
+                flyConn:Disconnect()
+                pcall(function() flyBV:Destroy() end)
+                pcall(function() flyBG:Destroy() end)
+                flyBV = nil; flyBG = nil
+                local c2 = lp.Character
+                if c2 and c2:FindFirstChild("Humanoid") then
+                    c2.Humanoid.PlatformStand = false
+                end
+                return
+            end
+            local dir = Vector3.zero
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir = dir + cam.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then dir = dir - cam.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then dir = dir - cam.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir = dir + cam.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+                dir = dir + Vector3.new(0, 1, 0)
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
+                dir = dir - Vector3.new(0, 1, 0)
+            end
+            flyBV.Velocity = dir.Magnitude > 0 and dir.Unit * cfg.flySpeed or Vector3.zero
+            flyBG.CFrame   = cam.CFrame
+        end)
+    end
+end)
+
+makeSlider(moveTab, "Fly Speed", 10, 200, cfg.flySpeed, function(v)
+    cfg.flySpeed = v
+end)
+
+makeSection(moveTab, "MISC MOVEMENT")
+
+makeToggle(moveTab, "NOCLIP  (walk through walls)", "noclip", function(on)
+    if not on then return end
+    task.spawn(function()
+        while states.noclip do
+            local mc = lp.Character
+            if mc then
+                for _, v in pairs(mc:GetDescendants()) do
+                    if v:IsA("BasePart") then v.CanCollide = false end
+                end
+            end
+            task.wait(0)
+        end
+    end)
+end)
+
+makeToggle(moveTab, "JUMP BOOST", "jumpBoost")
+makeSlider(moveTab, "Jump Power", 50, 500, cfg.jumpValue, function(v)
+    cfg.jumpValue = v
+end)
+
+makeToggle(moveTab, "INFINITE STAMINA / ENERGY", "infStamina")
+
+makeSection(moveTab, "TELEPORT")
+
+local tpListFrame = Instance.new("Frame", moveTab)
+tpListFrame.Size = UDim2.new(1, 0, 0, 10)
+tpListFrame.BackgroundTransparency = 1
+tpListFrame.AutomaticSize = Enum.AutomaticSize.Y
+tpListFrame.LayoutOrder = nextOrder()
+
+local tpLayout = Instance.new("UIListLayout", tpListFrame)
+tpLayout.Padding = UDim.new(0, 4)
+tpLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+local function rebuildTPList()
+    for _, c in pairs(tpListFrame:GetChildren()) do
+        if not c:IsA("UIListLayout") then c:Destroy() end
+    end
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= lp then
+            local btn = Instance.new("TextButton", tpListFrame)
+            btn.Size = UDim2.new(1, 0, 0, 30)
+            btn.BackgroundColor3 = Color3.fromRGB(28, 48, 28)
+            btn.TextColor3 = Color3.fromRGB(80, 230, 100)
+            btn.Font = Enum.Font.Gotham
+            btn.TextSize = 12
+            btn.Text = "  TP → " .. (p.DisplayName or p.Name)
+            btn.TextXAlignment = Enum.TextXAlignment.Left
+            btn.LayoutOrder = 1
+            Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+            btn.MouseButton1Click:Connect(function()
+                local mc = lp.Character
+                local tc = p.Character
+                if mc and tc then
+                    local mrp = mc:FindFirstChild("HumanoidRootPart")
+                    local trp = tc:FindFirstChild("HumanoidRootPart")
+                    if mrp and trp then
+                        mrp.CFrame = trp.CFrame * CFrame.new(0, 0, 2.5)
+                    end
+                end
+            end)
+        end
+    end
+end
+
+makeAction(moveTab, "↺  Refresh Player List", function() rebuildTPList() end)
+rebuildTPList()
+Players.PlayerAdded:Connect(rebuildTPList)
+Players.PlayerRemoving:Connect(rebuildTPList)
+
+makeSpacer(moveTab)
+
+-- ─────────────────────────────────────────────────────────────────────────────
+--  VISUAL TAB
+-- ─────────────────────────────────────────────────────────────────────────────
+makeSection(visualTab, "ESP")
+
+makeToggle(visualTab, "ESP + NAME TAGS", "esp")
+makeToggle(visualTab, "DISTANCE ESP  (stud count)", "distEsp")
+makeToggle(visualTab, "HEALTH ESP  (HP bars)", "healthEsp")
+
+makeToggle(visualTab, "CHAMS  (rainbow highlights)", "chams", function(on)
+    if not on then
+        for _, p in pairs(Players:GetPlayers()) do
+            if p.Character then
+                local hl = p.Character:FindFirstChild("NexusHL")
+                if hl then hl:Destroy() end
+            end
+        end
+    end
+end)
+
+makeSection(visualTab, "OVERLAY")
+
+local crosshairObj
+makeToggle(visualTab, "CUSTOM CROSSHAIR", "crosshair", function(on)
+    if crosshairObj then crosshairObj:Destroy(); crosshairObj = nil end
+    if not on then return end
+    crosshairObj = Instance.new("Frame", ScreenGui)
+    crosshairObj.Size = UDim2.new(0, 26, 0, 26)
+    crosshairObj.Position = UDim2.new(0.5, -13, 0.5, -13)
+    crosshairObj.BackgroundTransparency = 1
+    crosshairObj.ZIndex = 20
+
+    local function mkLine(sz, pos)
+        local f = Instance.new("Frame", crosshairObj)
+        f.Size = sz; f.Position = pos
+        f.BackgroundColor3 = Color3.new(1, 1, 1)
+        f.BorderSizePixel = 0; f.ZIndex = 20
+    end
+    mkLine(UDim2.new(0, 26, 0, 2), UDim2.new(0, 0, 0.5, -1))
+    mkLine(UDim2.new(0, 2, 0, 26), UDim2.new(0.5, -1, 0, 0))
+
+    local dot = Instance.new("Frame", crosshairObj)
+    dot.Size = UDim2.new(0, 4, 0, 4)
+    dot.Position = UDim2.new(0.5, -2, 0.5, -2)
+    dot.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+    dot.BorderSizePixel = 0; dot.ZIndex = 21
+    Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
+end)
+
+-- Tracers
+local hasDrawing = false
+pcall(function()
+    local t = Drawing.new("Line"); t:Destroy(); hasDrawing = true
+end)
+
+local tracerObjs = {}
+makeToggle(visualTab, "TRACERS" .. (hasDrawing and "" or "  [needs Drawing API]"), "tracers",
+    function(on)
+        if not on then
+            for _, d in pairs(tracerObjs) do pcall(function() d:Destroy() end) end
+            tracerObjs = {}
+        end
     end
 )
 
-makeRadiusRow(
-    "Auto Farm Radius: ", 390, 412,
-    function() return autoFarmRadius end,
-    function(v) autoFarmRadius = v end,
-    function(v)
-        autoFarmBtn.Text = "AUTO FARM [" .. v .. "m]" .. (states.autoFarm and ": ON" or ": OFF")
+makeSection(visualTab, "HITBOX / CAMERA")
+
+makeToggle(visualTab, "BIG HITBOX", "hitbox")
+makeSlider(visualTab, "Hitbox Size", 5, 60, cfg.hitboxSize, function(v)
+    cfg.hitboxSize = v
+end)
+
+makeSlider(visualTab, "FOV", 50, 120, 70, function(v)
+    workspace.CurrentCamera.FieldOfView = v
+end)
+
+makeSpacer(visualTab)
+
+-- ─────────────────────────────────────────────────────────────────────────────
+--  MISC TAB
+-- ─────────────────────────────────────────────────────────────────────────────
+makeSection(miscTab, "SURVIVAL")
+
+makeToggle(miscTab, "GOD MODE", "godMode", function(on)
+    if not on then return end
+    task.spawn(function()
+        while states.godMode do
+            local mc = lp.Character
+            if mc then
+                local hm = mc:FindFirstChild("Humanoid")
+                if hm then hm.MaxHealth = math.huge; hm.Health = math.huge end
+            end
+            task.wait(0.05)
+        end
+    end)
+end)
+
+makeSection(miscTab, "WEAPONS")
+
+makeAction(miscTab, "⚔  GET ALL SWORDS / TOOLS", function(btn)
+    btn.Text = "⏳  Searching..."
+    btn.BackgroundColor3 = Color3.fromRGB(130, 90, 0)
+    task.spawn(function()
+        for _, obj in pairs(workspace:GetDescendants()) do
+            pcall(function()
+                if obj:IsA("Tool") then obj.Parent = lp.Backpack end
+            end)
+        end
+        pcall(function()
+            for _, obj in pairs(game:GetService("StarterPack"):GetChildren()) do
+                if obj:IsA("Tool") then obj:Clone().Parent = lp.Backpack end
+            end
+        end)
+        pcall(function()
+            for _, obj in pairs(ReplicatedStorage:GetDescendants()) do
+                if obj:IsA("Tool") then
+                    pcall(function() obj:Clone().Parent = lp.Backpack end)
+                end
+            end
+        end)
+        task.wait(0.4)
+        btn.Text = "✓  SWORDS ACQUIRED"
+        btn.BackgroundColor3 = Color3.fromRGB(0, 125, 55)
+        task.wait(2.5)
+        btn.Text = "⚔  GET ALL SWORDS / TOOLS"
+        btn.BackgroundColor3 = Color3.fromRGB(0, 78, 155)
+    end)
+end)
+
+makeAction(miscTab, "🗡  EQUIP BEST TOOL", function()
+    local mc = lp.Character
+    if not mc then return end
+    local hum = mc:FindFirstChild("Humanoid")
+    if not hum then return end
+    for _, tool in pairs(lp.Backpack:GetChildren()) do
+        if tool:IsA("Tool") then
+            hum:EquipTool(tool)
+            return
+        end
     end
+end)
+
+makeAction(miscTab, "🔄  UNEQUIP ALL TOOLS", function()
+    local mc = lp.Character
+    if not mc then return end
+    local hum = mc:FindFirstChild("Humanoid")
+    if hum then hum:UnequipTools() end
+end)
+
+makeSection(miscTab, "AUTO ACTIONS")
+
+makeToggle(miscTab, "AUTO COLLECT (coins/drops)", "autoCollect", function(on)
+    if not on then return end
+    task.spawn(function()
+        while states.autoCollect do
+            local mc = lp.Character
+            if mc then
+                local mrp = mc:FindFirstChild("HumanoidRootPart")
+                if mrp then
+                    for _, obj in pairs(workspace:GetDescendants()) do
+                        if obj:IsA("BasePart") then
+                            local n = obj.Name:lower()
+                            if n:find("coin") or n:find("cash") or n:find("reward")
+                               or n:find("drop") or n:find("collect") or n:find("pickup")
+                               or n:find("money") or n:find("gem") or n:find("credit") then
+                                if (mrp.Position - obj.Position).Magnitude <= cfg.collectRadius then
+                                    mrp.CFrame = CFrame.new(obj.Position + Vector3.new(0, 3, 0))
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            task.wait(0.3)
+        end
+    end)
+end)
+
+makeRadiusRow(miscTab, "Collect Radius", "collectRadius", 5, 120)
+
+makeSection(miscTab, "CHAT / SPAM")
+
+local _, chatBox = makeTextInput(miscTab, "Spam message here...", cfg.chatMsg)
+
+makeToggle(miscTab, "CHAT SPAM", "chatSpam", function(on)
+    if not on then return end
+    local msg = chatBox.Text ~= "" and chatBox.Text or cfg.chatMsg
+    task.spawn(function()
+        while states.chatSpam do
+            pcall(function()
+                local cse = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+                if cse then
+                    local ev = cse:FindFirstChild("SayMessageRequest")
+                    if ev then ev:FireServer(msg, "All") end
+                end
+            end)
+            task.wait(cfg.chatDelay)
+        end
+    end)
+end)
+
+makeSlider(miscTab, "Spam Delay (sec)", 1, 30, cfg.chatDelay, function(v)
+    cfg.chatDelay = v
+end)
+
+makeSection(miscTab, "SERVER")
+
+makeAction(miscTab, "↺  REJOIN SERVER", function()
+    pcall(function() TeleportService:Teleport(game.PlaceId, lp) end)
+end)
+
+makeAction(miscTab, "✖  KICK SELF  (leave)", function()
+    pcall(function() lp:Kick("[NEXUS] Kicked by user.") end)
+end)
+
+makeSection(miscTab, "INFO")
+
+local infoLabel = Instance.new("TextLabel", miscTab)
+infoLabel.Size = UDim2.new(1, 0, 0, 68)
+infoLabel.BackgroundColor3 = Color3.fromRGB(22, 22, 30)
+infoLabel.TextColor3 = Color3.fromRGB(140, 140, 155)
+infoLabel.Font = Enum.Font.Gotham
+infoLabel.TextSize = 11
+infoLabel.TextWrapped = true
+infoLabel.LayoutOrder = nextOrder()
+infoLabel.Text = string.format(
+    "Player:  %s\nUser ID: %d\nJob ID:  %s...\nPlayers: %d / %d",
+    lp.Name, lp.UserId,
+    tostring(game.JobId):sub(1, 16),
+    #Players:GetPlayers(), Players.MaxPlayers
 )
+Instance.new("UICorner", infoLabel).CornerRadius = UDim.new(0, 6)
 
--- === SEPARATOR + LINK ===
-local Sep = Instance.new("Frame", Main)
-Sep.Size = UDim2.new(0.9, 0, 0, 2)
-Sep.Position = UDim2.new(0.05, 0, 0, 448)
-Sep.BackgroundColor3 = Color3.fromRGB(60, 60, 65)
-Sep.BorderSizePixel = 0
+-- Live player count update
+task.spawn(function()
+    while task.wait(3) do
+        if infoLabel and infoLabel.Parent then
+            infoLabel.Text = string.format(
+                "Player:  %s\nUser ID: %d\nJob ID:  %s...\nPlayers: %d / %d",
+                lp.Name, lp.UserId,
+                tostring(game.JobId):sub(1, 16),
+                #Players:GetPlayers(), Players.MaxPlayers
+            )
+        end
+    end
+end)
 
-local LinkLabel = Instance.new("TextBox", Main)
-LinkLabel.Size = UDim2.new(1, 0, 0, 40)
-LinkLabel.Position = UDim2.new(0, 0, 0, 458)
-LinkLabel.BackgroundTransparency = 1
-LinkLabel.Text = "t.me/zood3llotgk"
-LinkLabel.TextColor3 = Color3.fromRGB(0, 180, 255)
-LinkLabel.Font = Enum.Font.Gotham
-LinkLabel.TextSize = 14
-LinkLabel.ClearTextOnFocus = false
-LinkLabel.TextEditable = false
+makeSpacer(miscTab)
 
--- === RENDER LOOP (ESP / Hitbox / Speed) ===
-RunService.RenderStepped:Connect(function()
-    if states.speed and lp.Character and lp.Character:FindFirstChild("Humanoid") then
-        lp.Character.Humanoid.WalkSpeed = 28
+-- ─────────────────────────────────────────────────────────────────────────────
+--  RENDER LOOP
+-- ─────────────────────────────────────────────────────────────────────────────
+local renderConn = RunService.RenderStepped:Connect(function()
+
+    -- Speed
+    if states.speed then
+        local mc = lp.Character
+        if mc and mc:FindFirstChild("Humanoid") then
+            mc.Humanoid.WalkSpeed = cfg.speedValue
+        end
     end
 
+    -- Jump + Stamina
+    local mc = lp.Character
+    if mc then
+        local hm = mc:FindFirstChild("Humanoid")
+        if hm then
+            if states.jumpBoost then hm.JumpPower = cfg.jumpValue end
+            if states.infStamina then
+                for _, v in pairs(hm:GetChildren()) do
+                    if v:IsA("NumberValue") and (
+                        v.Name:lower():find("stam") or
+                        v.Name:lower():find("energy") or
+                        v.Name:lower():find("mana")
+                    ) then
+                        v.Value = 100
+                    end
+                end
+            end
+        end
+        -- Anti-ragdoll
+        if states.antiRagdoll then
+            for _, v in pairs(mc:GetDescendants()) do
+                if v:IsA("BallSocketConstraint") or v:IsA("HingeConstraint") then
+                    v.Enabled = false
+                end
+            end
+        end
+    end
+
+    -- Per-player ESP / Hitbox / Chams
     for _, p in pairs(Players:GetPlayers()) do
         if p ~= lp and p.Character then
             local char = p.Character
             local hrp  = char:FindFirstChild("HumanoidRootPart")
             local head = char:FindFirstChild("Head")
 
-            local hl = char:FindFirstChild("Highlight")
-            if states.esp then
+            -- Chams / ESP highlight
+            local hl = char:FindFirstChild("NexusHL")
+            if states.esp or states.chams then
                 if not hl then
                     hl = Instance.new("Highlight", char)
-                    hl.FillTransparency = 0.5
+                    hl.Name = "NexusHL"
                     hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
                 end
-                if head then
-                    local tag = head:FindFirstChild("NexusTag")
-                    if not tag then
-                        createNameTag(char, p.DisplayName or p.Name)
-                    else
-                        tag.Enabled = true
-                    end
+                if states.chams then
+                    local idx = getPlayerIndex(p)
+                    hl.FillColor = Color3.fromHSV((tick() * 0.08 + idx * 0.18) % 1, 0.75, 1)
+                    hl.FillTransparency = 0.22
+                    hl.OutlineColor = Color3.new(1, 1, 1)
+                else
+                    hl.FillColor = Color3.fromRGB(255, 50, 50)
+                    hl.FillTransparency = 0.5
+                    hl.OutlineColor = Color3.fromRGB(255, 255, 255)
                 end
             else
                 if hl then hl:Destroy() end
-                if head and head:FindFirstChild("NexusTag") then
-                    head.NexusTag.Enabled = false
+            end
+
+            -- Name tags + dist + health
+            if head then
+                if states.esp or states.distEsp or states.healthEsp then
+                    local tag = head:FindFirstChild("NexusTag")
+                    if not tag then createESPTag(char, p) end
+                    tag = head:FindFirstChild("NexusTag")
+                    if tag then
+                        tag.Enabled = true
+                        refreshESPTag(char, p)
+                    end
+                else
+                    local tag = head:FindFirstChild("NexusTag")
+                    if tag then tag.Enabled = false end
                 end
             end
 
+            -- Hitbox
             if hrp then
                 if states.hitbox then
-                    hrp.Size = Vector3.new(hitboxSize, hitboxSize, hitboxSize)
+                    hrp.Size = Vector3.new(cfg.hitboxSize, cfg.hitboxSize, cfg.hitboxSize)
                     hrp.Transparency = 0.7
                     hrp.Color = Color3.new(0, 0.5, 1)
                     hrp.CanCollide = false
@@ -351,10 +1253,67 @@ RunService.RenderStepped:Connect(function()
             end
         end
     end
+
+    -- Tracers via Drawing API
+    if states.tracers and hasDrawing then
+        for _, d in pairs(tracerObjs) do pcall(function() d:Destroy() end) end
+        tracerObjs = {}
+        local origin = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y)
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= lp and p.Character then
+                local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    local sp, onScreen = cam:WorldToViewportPoint(hrp.Position)
+                    if onScreen then
+                        local line = Drawing.new("Line")
+                        line.Visible     = true
+                        line.From        = origin
+                        line.To          = Vector2.new(sp.X, sp.Y)
+                        line.Color       = Color3.fromRGB(255, 55, 55)
+                        line.Thickness   = 1.2
+                        line.Transparency = 0.2
+                        table.insert(tracerObjs, line)
+                    end
+                end
+            end
+        end
+    elseif not states.tracers and #tracerObjs > 0 then
+        for _, d in pairs(tracerObjs) do pcall(function() d:Destroy() end) end
+        tracerObjs = {}
+    end
 end)
 
--- Anti-AFK
+table.insert(conns, renderConn)
+
+-- ─────────────────────────────────────────────────────────────────────────────
+--  ANTI-AFK
+-- ─────────────────────────────────────────────────────────────────────────────
 lp.Idled:Connect(function()
-    game:GetService("VirtualUser"):CaptureController()
-    game:GetService("VirtualUser"):ClickButton2(Vector2.new())
+    pcall(function()
+        game:GetService("VirtualUser"):CaptureController()
+        game:GetService("VirtualUser"):ClickButton2(Vector2.new())
+    end)
 end)
+
+-- ─────────────────────────────────────────────────────────────────────────────
+--  CHARACTER RESPAWN — re-apply persistent effects
+-- ─────────────────────────────────────────────────────────────────────────────
+lp.CharacterAdded:Connect(function(char)
+    char:WaitForChild("Humanoid", 10)
+    if states.godMode then
+        task.spawn(function()
+            while states.godMode do
+                local hm = char:FindFirstChild("Humanoid")
+                if hm then hm.MaxHealth = math.huge; hm.Health = math.huge end
+                task.wait(0.05)
+            end
+        end)
+    end
+    if states.fly then states.fly = false end
+end)
+
+-- ─────────────────────────────────────────────────────────────────────────────
+--  INIT
+-- ─────────────────────────────────────────────────────────────────────────────
+switchTab("COMBAT")
+print("[NEXUS HUB v2.0] Loaded — t.me/zood3llotgk")
